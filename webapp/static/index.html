@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Super-Resolución ×4</title>
+  <link rel="stylesheet" href="/static/style.css" />
+</head>
+<body>
+
+  <!-- ═══════════════ SIDEBAR ═══════════════ -->
+  <aside id="sidebar" class="sidebar">
+    <div class="sidebar-inner">
+
+      <div class="logo-row">
+        <div class="logo">
+          <span class="logo-title">SR</span>
+          <span class="logo-badge">×4</span>
+        </div>
+      </div>
+      <p class="logo-sub">U-Net · PixelShuffle · DIV2K</p>
+
+      <div id="health" class="health-pill">
+        <span class="health-dot"></span>
+        <span id="health-text">conectando…</span>
+      </div>
+
+      <hr class="sep" />
+
+      <!-- Upload -->
+      <div id="drop-zone" class="drop-zone">
+        <svg class="drop-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 16.5v2.25A2.25 2.25 0 005.25 21h13.5A2.25 2.25 0 0021 18.75V16.5"/>
+          <path d="M7.5 7.5L12 3l4.5 4.5"/>
+          <path d="M12 3v13.5"/>
+        </svg>
+        <p>Arrastra imagen aquí</p>
+        <span class="drop-hint">PNG · JPEG · WebP · máx 512 px</span>
+        <label class="btn btn-secondary sm" for="file-input">Elegir archivo</label>
+        <input id="file-input" type="file" accept="image/png,image/jpeg,image/webp" hidden />
+      </div>
+
+      <!-- Thumbnail -->
+      <div id="thumb-wrap" class="thumb-wrap hidden">
+        <img id="thumb-img" alt="preview" />
+        <div class="thumb-meta">
+          <span id="thumb-size" class="thumb-size"></span>
+          <button id="change-btn" class="btn-link">Cambiar</button>
+        </div>
+      </div>
+
+      <hr class="sep" id="sep-actions" />
+
+      <!-- Actions -->
+      <button id="upscale-btn" class="btn btn-primary" disabled>Super-resolver</button>
+
+      <div id="result-meta" class="result-meta hidden">
+        <div class="meta-row"><span class="mk">Resolución</span><span id="m-size">—</span></div>
+        <div class="meta-row"><span class="mk">Inferencia</span><span id="m-time">—</span></div>
+        <div class="meta-row"><span class="mk">Device</span><span id="m-device">—</span></div>
+      </div>
+
+      <div id="action-btns" class="action-btns hidden">
+        <button id="download-btn" class="btn btn-secondary sm">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+            <polyline points="7 10 12 15 17 10"/>
+            <line x1="12" y1="15" x2="12" y2="3"/>
+          </svg>
+          <span>Descargar SR</span>
+        </button>
+        <button id="reset-btn" class="btn btn-ghost sm">
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+               stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <polyline points="1 4 1 10 7 10"/>
+            <path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/>
+          </svg>
+          <span>Nueva imagen</span>
+        </button>
+      </div>
+
+    </div>
+
+    <!-- Floating collapse button on sidebar edge -->
+    <button id="sidebar-toggle-edge" class="sidebar-edge-toggle" title="Colapsar barra lateral" aria-label="Colapsar barra lateral">
+      <svg class="icon-collapse" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+           stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <polyline points="15 18 9 12 15 6"/>
+      </svg>
+    </button>
+  </aside>
+
+  <!-- ═══════════════ MAIN ═══════════════ -->
+  <div class="main">
+
+    <!-- Tab bar -->
+    <div class="tab-bar">
+      <button id="sidebar-toggle-tab" class="icon-btn tab-hamburger" title="Mostrar/ocultar barra lateral" aria-label="Mostrar/ocultar barra lateral">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <line x1="3" y1="6"  x2="21" y2="6"/>
+          <line x1="3" y1="12" x2="21" y2="12"/>
+          <line x1="3" y1="18" x2="21" y2="18"/>
+        </svg>
+      </button>
+
+      <button class="tab active" data-tab="compare">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <polyline points="17 1 21 5 17 9"/>
+          <path d="M3 11V9a4 4 0 0 1 4-4h14"/>
+          <polyline points="7 23 3 19 7 15"/>
+          <path d="M21 13v2a4 4 0 0 1-4 4H3"/>
+        </svg>
+        <span>Comparar</span>
+      </button>
+      <button class="tab" data-tab="grid">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="3"  y="4" width="5" height="16" rx="1"/>
+          <rect x="10" y="4" width="4" height="16" rx="1"/>
+          <rect x="16" y="4" width="5" height="16" rx="1"/>
+        </svg>
+        <span>Side by side</span>
+      </button>
+    </div>
+
+    <!-- ── Tab: Comparar ── -->
+    <div id="tab-compare" class="tab-pane active">
+
+      <!-- Empty state -->
+      <div id="empty-state" class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2.5" y="4" width="19" height="16" rx="2"/>
+          <line x1="12" y1="4" x2="12" y2="20"/>
+          <circle cx="7.25" cy="10" r="1.2"/>
+          <path d="M3.5 18l3-3 2 2"/>
+        </svg>
+        <p>Sube una imagen para comenzar</p>
+        <span>El modelo generará una versión ×4 más nítida</span>
+      </div>
+
+      <!-- Spinner -->
+      <div id="spinner" class="spinner hidden">
+        <div class="spinner-ring"></div>
+        <p>Procesando…</p>
+      </div>
+
+      <!-- Error -->
+      <div id="error-box" class="error-box hidden"></div>
+
+      <!-- Viewer (slider) -->
+      <div id="viewer" class="viewer hidden">
+        <div id="slider-wrap" class="slider-wrap">
+          <img id="img-right" class="cmp-img" alt="right" />
+          <img id="img-left"  class="cmp-img overlay" alt="left" />
+
+          <select id="sel-left"  class="viewer-sel viewer-sel-left"  aria-label="Capa izquierda"></select>
+          <select id="sel-right" class="viewer-sel viewer-sel-right" aria-label="Capa derecha"></select>
+
+          <div id="handle" class="handle">
+            <div class="handle-line"></div>
+            <div class="handle-knob">
+              <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+                   stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="9 6 3 12 9 18"/>
+                <polyline points="15 6 21 12 15 18"/>
+              </svg>
+            </div>
+          </div>
+          <input id="cmp-range" type="range" min="0" max="100" value="50"
+                 class="cmp-range" />
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ── Tab: Side by side ── -->
+    <div id="tab-grid" class="tab-pane hidden">
+
+      <div id="grid-empty" class="empty-state">
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="2.5"  y="4" width="5" height="16" rx="1"/>
+          <rect x="9.5"  y="4" width="5" height="16" rx="1"/>
+          <rect x="16.5" y="4" width="5" height="16" rx="1"/>
+        </svg>
+        <p>Sube una imagen para ver la comparativa</p>
+        <span>LR · Bicubic · Modelo en paralelo</span>
+      </div>
+
+      <div id="grid" class="grid hidden">
+        <div class="grid-col">
+          <div class="grid-label">LR nearest ×4</div>
+          <div class="grid-img-wrap"><img id="g-lr" alt="LR nearest" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">Bicubic ×4</div>
+          <div class="grid-img-wrap"><img id="g-bicubic" alt="Bicubic" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">Modelo v1 ×4</div>
+          <div class="grid-img-wrap"><img id="g-model-v1" alt="Modelo v1" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">Modelo v2 ×4</div>
+          <div class="grid-img-wrap"><img id="g-model-v2" alt="Modelo v2" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">Modelo v3 ×4</div>
+          <div class="grid-img-wrap"><img id="g-model-v3" alt="Modelo v3" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">EDSR-base ×4 (baseline)</div>
+          <div class="grid-img-wrap"><img id="g-model-edsr" alt="EDSR baseline" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">DRLN ×4 (baseline)</div>
+          <div class="grid-img-wrap"><img id="g-model-drln" alt="DRLN baseline" /></div>
+        </div>
+        <div class="grid-col">
+          <div class="grid-label">Real-ESRGAN x4plus (baseline)</div>
+          <div class="grid-img-wrap"><img id="g-model-realesrgan" alt="Real-ESRGAN baseline" /></div>
+        </div>
+      </div>
+
+    </div>
+
+  </div><!-- /main -->
+
+  <script src="/static/app.js"></script>
+</body>
+</html>

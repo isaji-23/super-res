@@ -1,0 +1,46 @@
+# Data, weights, generated outputs
+data/
+checkpoints/
+checkpoints_v*/
+outputs/
+outputs_v*/
+
+# Model weights / large binaries
+*.pt
+*.pth
+*.ckpt
+*.safetensors
+*.onnx
+*.h5
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.ipynb_checkpoints/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Virtual env
+.venv/
+venv/
+env/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Logs / runtime
+*.log
+runs/
+wandb/
+mlruns/
+tensorboard/
+
+# Env / secrets
+.env
+.env.*
+!.env.example
