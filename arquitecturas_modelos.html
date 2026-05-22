@@ -1,0 +1,748 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Arquitecturas de modelos — Super-Resolución</title>
+<style>
+  :root {
+    --bg: #0f1419;
+    --panel: #1a2332;
+    --panel-2: #243447;
+    --text: #e6edf3;
+    --muted: #8b98a5;
+    --accent: #58a6ff;
+    --accent-2: #f78166;
+    --green: #56d364;
+    --yellow: #e3b341;
+    --red: #f85149;
+    --purple: #bc8cff;
+    --border: #30363d;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    line-height: 1.65;
+  }
+  .container { max-width: 1200px; margin: 0 auto; padding: 40px 32px; }
+  header { border-bottom: 1px solid var(--border); padding-bottom: 24px; margin-bottom: 40px; }
+  h1 { font-size: 2.4rem; margin: 0 0 8px; color: var(--accent); }
+  header p { color: var(--muted); margin: 4px 0; }
+  h2 {
+    font-size: 1.8rem;
+    color: var(--accent-2);
+    border-bottom: 2px solid var(--border);
+    padding-bottom: 8px;
+    margin-top: 56px;
+  }
+  h3 { font-size: 1.25rem; color: var(--purple); margin-top: 28px; }
+  h4 { color: var(--green); margin-top: 20px; }
+  code, pre {
+    font-family: "JetBrains Mono", "Fira Code", Consolas, monospace;
+    font-size: 0.92em;
+  }
+  code {
+    background: var(--panel-2);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--yellow);
+  }
+  pre {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 16px;
+    overflow-x: auto;
+    line-height: 1.5;
+  }
+  pre code { background: transparent; padding: 0; color: var(--text); }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    margin: 20px 0;
+    background: var(--panel);
+    border-radius: 8px;
+    overflow: hidden;
+  }
+  th, td {
+    padding: 12px 14px;
+    text-align: left;
+    border-bottom: 1px solid var(--border);
+  }
+  th { background: var(--panel-2); color: var(--accent); font-weight: 600; }
+  tr:last-child td { border-bottom: none; }
+  tr:hover { background: var(--panel-2); }
+  .diagram {
+    background: var(--panel);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 24px;
+    margin: 24px 0;
+    text-align: center;
+    overflow-x: auto;
+  }
+  .diagram svg { max-width: 100%; height: auto; }
+  .caption {
+    color: var(--muted);
+    font-size: 0.9rem;
+    font-style: italic;
+    margin-top: 12px;
+  }
+  .toc {
+    background: var(--panel);
+    border-left: 4px solid var(--accent);
+    padding: 16px 24px;
+    border-radius: 6px;
+    margin-bottom: 40px;
+  }
+  .toc ol { margin: 8px 0; }
+  .toc a { color: var(--accent); text-decoration: none; }
+  .toc a:hover { text-decoration: underline; }
+  .callout {
+    background: rgba(88, 166, 255, 0.08);
+    border-left: 4px solid var(--accent);
+    padding: 12px 16px;
+    border-radius: 4px;
+    margin: 16px 0;
+  }
+  .callout.warn {
+    background: rgba(227, 179, 65, 0.08);
+    border-left-color: var(--yellow);
+  }
+  .callout.bad {
+    background: rgba(248, 81, 73, 0.08);
+    border-left-color: var(--red);
+  }
+  ul, ol { padding-left: 24px; }
+  li { margin: 6px 0; }
+  .legend {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 16px;
+    justify-content: center;
+    margin-top: 12px;
+    font-size: 0.85rem;
+  }
+  .legend-item { display: flex; align-items: center; gap: 6px; }
+  .legend-box { width: 16px; height: 16px; border-radius: 3px; }
+</style>
+</head>
+<body>
+<div class="container">
+
+<header>
+  <h1>Arquitecturas de modelos — Super-Resolución x4</h1>
+  <p>Análisis comparativo de los cuatro scripts en <code>src/</code></p>
+  <p>Proyecto <code>super-res</code> · DIV2K · 32×32 → 128×128</p>
+</header>
+
+<div class="toc">
+  <strong>Índice</strong>
+  <ol>
+    <li><a href="#v1">model.py — UNetSR (versión 1, línea base)</a></li>
+    <li><a href="#v2">model_v2.py — UNetSRv2 (mejoras de bajo coste)</a></li>
+    <li><a href="#v3">model_v3.py — UNetSRv3 (atención de canal + ICNR)</a></li>
+    <li><a href="#rrdb">realesrgan_arch.py — RRDBNet (Real-ESRGAN)</a></li>
+    <li><a href="#resumen">Resumen comparativo</a></li>
+  </ol>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<section id="v1">
+<h2>1. model.py — UNetSR (versión 1, línea base)</h2>
+
+<h3>Filosofía</h3>
+<p>Adaptación directa de la U-Net clásica (originalmente diseñada para segmentación biomédica) al problema de super-resolución por factor 4 (de 32×32 a 128×128 píxeles). Es el punto de partida del proyecto: una arquitectura conocida, fácil de razonar, sobre la que iterar.</p>
+
+<h3>Diagrama de la arquitectura</h3>
+<div class="diagram">
+<svg viewBox="0 0 1000 520" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow1" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b98a5"/>
+    </marker>
+    <marker id="arrowSkip" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#e3b341"/>
+    </marker>
+  </defs>
+
+  <!-- Encoder column -->
+  <rect x="40"  y="60"  width="120" height="50" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="100" y="82" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">Input LR</text>
+  <text x="100" y="100" text-anchor="middle" fill="#cfd9e6" font-size="11">3 × 32 × 32</text>
+
+  <rect x="40"  y="140" width="120" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="100" y="162" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">inc (DoubleConv)</text>
+  <text x="100" y="180" text-anchor="middle" fill="#cfd9e6" font-size="11">48 × 32 × 32</text>
+
+  <rect x="40"  y="220" width="120" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="100" y="242" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">down1</text>
+  <text x="100" y="260" text-anchor="middle" fill="#cfd9e6" font-size="11">96 × 16 × 16</text>
+
+  <rect x="40"  y="300" width="120" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="100" y="322" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">down2</text>
+  <text x="100" y="340" text-anchor="middle" fill="#cfd9e6" font-size="11">192 × 8 × 8</text>
+
+  <rect x="40"  y="380" width="120" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="100" y="402" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">down3</text>
+  <text x="100" y="420" text-anchor="middle" fill="#cfd9e6" font-size="11">384 × 4 × 4</text>
+
+  <!-- Bottleneck -->
+  <rect x="220" y="380" width="140" height="50" rx="6" fill="#bc8cff" stroke="#d2a8ff"/>
+  <text x="290" y="402" text-anchor="middle" fill="#1a1a1a" font-size="13" font-weight="bold">Bottleneck</text>
+  <text x="290" y="420" text-anchor="middle" fill="#1a1a1a" font-size="11">384 × 4 × 4</text>
+
+  <!-- Decoder column -->
+  <rect x="420" y="300" width="120" height="50" rx="6" fill="#db6d28" stroke="#f78166"/>
+  <text x="480" y="322" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">up1</text>
+  <text x="480" y="340" text-anchor="middle" fill="#cfd9e6" font-size="11">192 × 8 × 8</text>
+
+  <rect x="420" y="220" width="120" height="50" rx="6" fill="#db6d28" stroke="#f78166"/>
+  <text x="480" y="242" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">up2</text>
+  <text x="480" y="260" text-anchor="middle" fill="#cfd9e6" font-size="11">96 × 16 × 16</text>
+
+  <rect x="420" y="140" width="120" height="50" rx="6" fill="#db6d28" stroke="#f78166"/>
+  <text x="480" y="162" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">up3</text>
+  <text x="480" y="180" text-anchor="middle" fill="#cfd9e6" font-size="11">48 × 32 × 32</text>
+
+  <!-- Upscale column -->
+  <rect x="620" y="140" width="140" height="50" rx="6" fill="#9e6a03" stroke="#e3b341"/>
+  <text x="690" y="162" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">ps1 (PixelShuffle)</text>
+  <text x="690" y="180" text-anchor="middle" fill="#cfd9e6" font-size="11">48 × 64 × 64</text>
+
+  <rect x="620" y="220" width="140" height="50" rx="6" fill="#9e6a03" stroke="#e3b341"/>
+  <text x="690" y="242" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">ps2 (PixelShuffle)</text>
+  <text x="690" y="260" text-anchor="middle" fill="#cfd9e6" font-size="11">48 × 128 × 128</text>
+
+  <rect x="620" y="300" width="140" height="50" rx="6" fill="#a40e26" stroke="#f85149"/>
+  <text x="690" y="322" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">head + Sigmoid</text>
+  <text x="690" y="340" text-anchor="middle" fill="#cfd9e6" font-size="11">3 × 128 × 128</text>
+
+  <rect x="820" y="300" width="140" height="50" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="890" y="322" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">Output HR</text>
+  <text x="890" y="340" text-anchor="middle" fill="#cfd9e6" font-size="11">3 × 128 × 128</text>
+
+  <!-- Encoder arrows down -->
+  <line x1="100" y1="110" x2="100" y2="140" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <line x1="100" y1="190" x2="100" y2="220" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <line x1="100" y1="270" x2="100" y2="300" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <line x1="100" y1="350" x2="100" y2="380" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+
+  <!-- down3 -> bottleneck -->
+  <line x1="160" y1="405" x2="220" y2="405" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+
+  <!-- bottleneck -> up1 -->
+  <path d="M 360 405 Q 390 405 390 325 L 420 325" stroke="#8b98a5" stroke-width="2" fill="none" marker-end="url(#arrow1)"/>
+
+  <!-- Decoder up arrows -->
+  <line x1="480" y1="300" x2="480" y2="270" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <line x1="480" y1="220" x2="480" y2="190" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+
+  <!-- up3 -> ps1 -->
+  <line x1="540" y1="165" x2="620" y2="165" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <!-- ps1 -> ps2 -->
+  <line x1="690" y1="190" x2="690" y2="220" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <!-- ps2 -> head -->
+  <line x1="690" y1="270" x2="690" y2="300" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+  <!-- head -> output -->
+  <line x1="760" y1="325" x2="820" y2="325" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow1)"/>
+
+  <!-- Skip connections (yellow) -->
+  <path d="M 160 165 Q 290 50 480 130" stroke="#e3b341" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#arrowSkip)"/>
+  <path d="M 160 245 Q 290 130 480 210" stroke="#e3b341" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#arrowSkip)"/>
+  <path d="M 160 325 Q 290 210 420 305" stroke="#e3b341" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#arrowSkip)"/>
+
+  <!-- Legend -->
+  <text x="500" y="490" text-anchor="middle" fill="#e3b341" font-size="12">━━ skip connection (concat)  ━━</text>
+</svg>
+<div class="caption">Topología U-Net x4 con encoder, bottleneck, decoder con skip connections y dos bloques PixelShuffle de upsampling.</div>
+</div>
+
+<h3>Arquitectura por bloques</h3>
+
+<h4>DoubleConv(in, out) — bloque básico de extracción de features</h4>
+<pre><code>Conv2D 3x3 (padding=1, bias=False) → BatchNorm2D → ReLU(inplace)
+Conv2D 3x3 (padding=1, bias=False) → BatchNorm2D → ReLU(inplace)</code></pre>
+<p><code>bias=False</code> justificado: BatchNorm absorbe el sesgo (cualquier desplazamiento constante lo neutraliza la normalización). <code>inplace=True</code> ahorra memoria reescribiendo el tensor.</p>
+
+<h4>Down(in, out) — etapa descendente del encoder</h4>
+<pre><code>MaxPool2D(2) → DoubleConv(in, out)</code></pre>
+<p>MaxPool reduce resolución espacial a la mitad, duplica campo receptivo efectivo por nivel.</p>
+
+<h4>Up(in, skip, out) — etapa ascendente del decoder</h4>
+<pre><code>Upsample(scale=2, mode='nearest') → Conv 1x1 (in → skip) → concat con skip → DoubleConv(2*skip, out)</code></pre>
+<ul>
+  <li>Upsample por vecino más cercano (no transpuesta): más barato, sin artefactos de tablero.</li>
+  <li>Conv 1x1 reduce canales antes de concatenar para no inflar la entrada de la DoubleConv.</li>
+  <li>Concatenación (no suma): preserva información de ambos caminos por separado.</li>
+</ul>
+
+<h4>PixelShuffleBlock(channels) — bloque de upsampling sub-píxel</h4>
+<pre><code>Conv2D 3x3 (channels → channels*4) → PixelShuffle(r=2) → ReLU</code></pre>
+<p>PixelShuffle reordena canales en el eje espacial: <code>(B, C·r², H, W) → (B, C, H·r, W·r)</code>. Técnica estándar de ESPCN (Shi et al. 2016). Más eficiente que convolución transpuesta y sin artefactos sistemáticos si la inicialización es buena.</p>
+
+<h3>Topología completa del forward</h3>
+<table>
+  <thead><tr><th>Etapa</th><th>Tensor de salida</th><th>Operación</th></tr></thead>
+  <tbody>
+    <tr><td>Entrada</td><td><code>(B, 3, 32, 32)</code></td><td>Imagen de baja resolución</td></tr>
+    <tr><td><code>inc</code></td><td><code>(B, 48, 32, 32)</code></td><td>DoubleConv inicial</td></tr>
+    <tr><td><code>down1</code></td><td><code>(B, 96, 16, 16)</code></td><td>MaxPool + DoubleConv</td></tr>
+    <tr><td><code>down2</code></td><td><code>(B, 192, 8, 8)</code></td><td>MaxPool + DoubleConv</td></tr>
+    <tr><td><code>down3</code></td><td><code>(B, 384, 4, 4)</code></td><td>MaxPool + DoubleConv</td></tr>
+    <tr><td><code>bottleneck</code></td><td><code>(B, 384, 4, 4)</code></td><td>DoubleConv extra para refinar nivel más profundo</td></tr>
+    <tr><td><code>up1</code></td><td><code>(B, 192, 8, 8)</code></td><td>Upsample + concat con <code>down2</code></td></tr>
+    <tr><td><code>up2</code></td><td><code>(B, 96, 16, 16)</code></td><td>Upsample + concat con <code>down1</code></td></tr>
+    <tr><td><code>up3</code></td><td><code>(B, 48, 32, 32)</code></td><td>Upsample + concat con <code>inc</code></td></tr>
+    <tr><td><code>ps1</code></td><td><code>(B, 48, 64, 64)</code></td><td>Sub-pixel upscale x2</td></tr>
+    <tr><td><code>ps2</code></td><td><code>(B, 48, 128, 128)</code></td><td>Sub-pixel upscale x2</td></tr>
+    <tr><td><code>head + Sigmoid</code></td><td><code>(B, 3, 128, 128)</code></td><td>Convolución 1x1 a RGB + activación</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+<strong>Nota sobre <code>base_channels</code>:</strong> el docstring explica que <code>base_channels=48</code> se eligió en lugar del <code>64/128/256/512</code> de la especificación original porque ese presupuesto disparaba el conteo de parámetros muy por encima de 10 millones. Se respeta el presupuesto de 2-10M.
+</div>
+
+<h3>Problemas que motivan la versión 2</h3>
+<div class="callout bad">
+<ul>
+  <li><strong>BatchNorm es perjudicial en super-resolución</strong>: las estadísticas por batch normalizan la distribución de features, pero esas estadísticas codifican información de contraste y brillo que la red necesita preservar para reconstruir texturas de alta frecuencia. EDSR, RCAN, SwinIR la eliminan explícitamente.</li>
+  <li><strong>La activación Sigmoid satura los gradientes</strong>: cuando la salida se acerca a 0 (píxeles oscuros) o a 1 (píxeles claros), la derivada tiende a cero y el aprendizaje se estanca en las zonas extremas.</li>
+  <li><strong>No hay aprendizaje residual</strong>: la red debe aprender simultáneamente el upscale geométrico y los detalles de alta frecuencia, partiendo de pesos aleatorios. Ineficiente: el bicúbico ya da PSNR razonable.</li>
+</ul>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<section id="v2">
+<h2>2. model_v2.py — UNetSRv2 (mejoras de bajo coste)</h2>
+
+<h3>Filosofía</h3>
+<p>Mismo esqueleto que la versión 1, pero con tres cambios mínimos y bien justificados que mejoran calidad sin tocar el conteo de parámetros. Mantiene la misma firma de <code>forward</code>: reemplazo directo.</p>
+
+<h3>Diagrama de los cambios clave</h3>
+<div class="diagram">
+<svg viewBox="0 0 1000 380" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow2" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b98a5"/>
+    </marker>
+    <marker id="arrowRes" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#56d364"/>
+    </marker>
+  </defs>
+
+  <!-- Input -->
+  <rect x="30" y="160" width="120" height="60" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="90" y="185" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">Input LR</text>
+  <text x="90" y="205" text-anchor="middle" fill="#cfd9e6" font-size="11">3 × 32 × 32</text>
+
+  <!-- U-Net body box -->
+  <rect x="200" y="80" width="280" height="100" rx="8" fill="#243447" stroke="#58a6ff" stroke-width="2"/>
+  <text x="340" y="110" text-anchor="middle" fill="#58a6ff" font-size="14" font-weight="bold">U-Net (igual a v1)</text>
+  <text x="340" y="132" text-anchor="middle" fill="#e6edf3" font-size="12">DoubleConv sin BatchNorm</text>
+  <text x="340" y="150" text-anchor="middle" fill="#e6edf3" font-size="12">Conv 3x3 + ReLU + Conv 3x3 + ReLU</text>
+  <text x="340" y="168" text-anchor="middle" fill="#cfd9e6" font-size="11">(bias=True, gana grados de libertad)</text>
+
+  <!-- Head -->
+  <rect x="520" y="80" width="160" height="100" rx="8" fill="#a40e26" stroke="#f85149"/>
+  <text x="600" y="110" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">head (Conv 1x1)</text>
+  <text x="600" y="132" text-anchor="middle" fill="#cfd9e6" font-size="11">Zero-init</text>
+  <text x="600" y="150" text-anchor="middle" fill="#cfd9e6" font-size="11">weight = 0, bias = 0</text>
+  <text x="600" y="168" text-anchor="middle" fill="#cfd9e6" font-size="11">→ residual</text>
+
+  <!-- Bicubic path -->
+  <rect x="200" y="240" width="280" height="60" rx="8" fill="#9e6a03" stroke="#e3b341" stroke-width="2"/>
+  <text x="340" y="265" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">F.interpolate (bicubic x4)</text>
+  <text x="340" y="285" text-anchor="middle" fill="#cfd9e6" font-size="11">base = upscale clásico</text>
+
+  <!-- Sum node -->
+  <circle cx="740" cy="220" r="28" fill="#238636" stroke="#56d364" stroke-width="2"/>
+  <text x="740" y="227" text-anchor="middle" fill="#fff" font-size="22" font-weight="bold">+</text>
+
+  <!-- Clamp + output -->
+  <rect x="810" y="190" width="160" height="60" rx="8" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="890" y="215" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">clamp(0, 1)</text>
+  <text x="890" y="235" text-anchor="middle" fill="#cfd9e6" font-size="11">Output HR</text>
+
+  <!-- Arrows -->
+  <line x1="150" y1="190" x2="200" y2="130" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="150" y1="190" x2="200" y2="270" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="480" y1="130" x2="520" y2="130" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="680" y1="130" x2="715" y2="200" stroke="#56d364" stroke-width="2" marker-end="url(#arrowRes)"/>
+  <line x1="480" y1="270" x2="715" y2="240" stroke="#e3b341" stroke-width="2" marker-end="url(#arrow2)"/>
+  <line x1="768" y1="220" x2="810" y2="220" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Labels -->
+  <text x="600" y="190" text-anchor="middle" fill="#56d364" font-size="11" font-style="italic">residuo aprendido</text>
+  <text x="340" y="330" text-anchor="middle" fill="#e3b341" font-size="11" font-style="italic">upscale base (no aprendido)</text>
+
+  <text x="500" y="50" text-anchor="middle" fill="#f78166" font-size="16" font-weight="bold">Global residual learning sobre interpolación bicúbica</text>
+</svg>
+<div class="caption">Versión 2: la red predice un residuo que se suma a la interpolación bicúbica. Head zero-init → output inicial = bicúbico.</div>
+</div>
+
+<h3>Cambio 1: eliminación de BatchNorm</h3>
+<p><code>DoubleConv</code> queda:</p>
+<pre><code>Conv2D 3x3 (padding=1, bias=True) → ReLU
+Conv2D 3x3 (padding=1, bias=True) → ReLU</code></pre>
+<p>Sin BatchNorm absorbiendo el sesgo, <code>bias=True</code> vuelve a ser necesario. La red gana grados de libertad para preservar variaciones de contraste local.</p>
+
+<h3>Cambio 2: clamp en lugar de Sigmoid</h3>
+<p>En lugar de Sigmoid sobre las activaciones del head, se aplica <code>.clamp(0.0, 1.0)</code> al tensor final. Diferencia conceptual enorme:</p>
+<ul>
+  <li>Sigmoid actúa en cada paso de entrenamiento y atenúa gradientes en píxeles extremos.</li>
+  <li>Clamp es no derivable solo en los bordes; en valores intermedios (la mayoría) tiene derivada 1, el gradiente fluye sin atenuación durante todo el entrenamiento.</li>
+</ul>
+
+<h3>Cambio 3: aprendizaje residual sobre interpolación bicúbica</h3>
+<p>El cambio más importante:</p>
+<pre><code>residual = self.head(y)
+base = F.interpolate(x, scale_factor=self.scale, mode="bicubic", align_corners=False)
+return (base + residual).clamp(0.0, 1.0)</code></pre>
+<p>La red ya no predice directamente la imagen de alta resolución; predice un <strong>residuo</strong> que se suma a la interpolación bicúbica. Combinado con <strong>inicialización a cero del head</strong>:</p>
+<pre><code>nn.init.zeros_(self.head.weight)
+nn.init.zeros_(self.head.bias)</code></pre>
+<div class="callout">
+<strong>Consecuencia matemática:</strong> en la época 0, <code>head(y) = 0</code> → la salida es exactamente la interpolación bicúbica. El PSNR inicial ya es el del baseline bicúbico (~28 dB en DIV2K x4). Todo el esfuerzo de entrenamiento se concentra en aprender los detalles de alta frecuencia que el bicúbico no puede reproducir: bordes nítidos, texturas finas, patrones repetitivos.
+</div>
+<p>Esta técnica se llama <em>global residual learning</em> en la literatura de super-resolución (VDSR, EDSR y casi todas las arquitecturas posteriores).</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<section id="v3">
+<h2>3. model_v3.py — UNetSRv3 (atención de canal + ICNR)</h2>
+
+<h3>Filosofía</h3>
+<p>Hereda los tres cambios de la versión 2 y añade dos mejoras arquitectónicas tomadas de RCAN (Zhang et al. 2018) y de Aitken et al. 2017. Pérdida, optimizador, dataset y aumentos idénticos: la mejora medida es atribuible exclusivamente a la arquitectura.</p>
+
+<h3>Diagrama del bloque RCAB</h3>
+<div class="diagram">
+<svg viewBox="0 0 900 320" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow3" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b98a5"/>
+    </marker>
+  </defs>
+
+  <!-- Input -->
+  <rect x="20" y="130" width="100" height="50" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="70" y="160" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">x</text>
+
+  <!-- Body -->
+  <rect x="160" y="100" width="110" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="215" y="125" text-anchor="middle" fill="#fff" font-size="12">Conv 3x3</text>
+  <text x="215" y="140" text-anchor="middle" fill="#cfd9e6" font-size="10">channels → channels</text>
+
+  <rect x="290" y="100" width="80" height="50" rx="6" fill="#9e6a03" stroke="#e3b341"/>
+  <text x="330" y="130" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">ReLU</text>
+
+  <rect x="390" y="100" width="110" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="445" y="125" text-anchor="middle" fill="#fff" font-size="12">Conv 3x3</text>
+  <text x="445" y="140" text-anchor="middle" fill="#cfd9e6" font-size="10">channels → channels</text>
+
+  <!-- ChannelAttention block -->
+  <rect x="520" y="60" width="220" height="130" rx="8" fill="#3d1d6b" stroke="#bc8cff" stroke-width="2"/>
+  <text x="630" y="82" text-anchor="middle" fill="#bc8cff" font-size="13" font-weight="bold">ChannelAttention (SE)</text>
+  <text x="630" y="105" text-anchor="middle" fill="#e6edf3" font-size="11">AdaptiveAvgPool2d(1)</text>
+  <text x="630" y="122" text-anchor="middle" fill="#e6edf3" font-size="11">Conv 1x1 (C → C/16) + ReLU</text>
+  <text x="630" y="139" text-anchor="middle" fill="#e6edf3" font-size="11">Conv 1x1 (C/16 → C) + Sigmoid</text>
+  <text x="630" y="160" text-anchor="middle" fill="#e3b341" font-size="11" font-style="italic">peso por canal ∈ [0, 1]</text>
+  <text x="630" y="178" text-anchor="middle" fill="#cfd9e6" font-size="11">multiplicación elemento a elemento</text>
+
+  <!-- Sum -->
+  <circle cx="800" cy="155" r="25" fill="#238636" stroke="#56d364" stroke-width="2"/>
+  <text x="800" y="162" text-anchor="middle" fill="#fff" font-size="20" font-weight="bold">+</text>
+
+  <!-- Output -->
+  <rect x="820" y="240" width="60" height="40" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="850" y="265" text-anchor="middle" fill="#fff" font-size="13" font-weight="bold">out</text>
+
+  <!-- Arrows -->
+  <line x1="120" y1="155" x2="160" y2="125" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="270" y1="125" x2="290" y2="125" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="370" y1="125" x2="390" y2="125" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="500" y1="125" x2="520" y2="125" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="740" y1="155" x2="775" y2="155" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow3)"/>
+  <line x1="800" y1="180" x2="850" y2="240" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow3)"/>
+
+  <!-- Skip connection (identity) -->
+  <path d="M 70 180 Q 70 250 800 250 L 800 180" stroke="#e3b341" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#arrow3)"/>
+  <text x="400" y="270" text-anchor="middle" fill="#e3b341" font-size="12" font-style="italic">skip identity (residual connection)</text>
+
+  <text x="450" y="40" text-anchor="middle" fill="#f78166" font-size="15" font-weight="bold">RCAB — Residual Channel Attention Block</text>
+</svg>
+<div class="caption">RCAB: el cuerpo (Conv-ReLU-Conv-ChannelAttention) aprende el delta sobre la identidad. ChannelAttention reescala canales por importancia global aprendida.</div>
+</div>
+
+<h3>Cambio 1: bloques RCAB (Residual Channel Attention Block)</h3>
+
+<h4>ChannelAttention(channels, reduction=16) — atención por canal, estilo Squeeze-and-Excitation</h4>
+<pre><code>AdaptiveAvgPool2d(1)                          → tensor (B, C, 1, 1): media global por canal
+Conv2D 1x1 (C → C/reduction) → ReLU            → squeeze: comprime a cuello de botella
+Conv2D 1x1 (C/reduction → C) → Sigmoid        → excitation: recupera pesos por canal ∈ [0, 1]
+multiplicar elemento a elemento con el input</code></pre>
+<p>Reescalado aprendido por canal: la red descubre qué mapas de características son más relevantes para cada imagen concreta. Un canal que captura bordes verticales puede pesar más en una foto arquitectónica que en un retrato.</p>
+
+<h4>RCAB(channels) — bloque residual con atención de canal</h4>
+<pre><code>input ──────────────────────────────────────┐
+  │                                         │
+  Conv 3x3 → ReLU → Conv 3x3 → ChannelAttention
+  │                                         │
+  └─────────────────── + ───────────────────┘</code></pre>
+<p>La skip identity (suma con input) hace que el bloque aprenda solo el <em>delta</em> respecto a su entrada. Estabiliza el entrenamiento al apilar muchos bloques en profundidad.</p>
+
+<h4>RCAStage(in, out) — reemplazo directo de DoubleConv</h4>
+<pre><code>Conv 3x3 (in → out)  → ReLU  →  RCAB(out)</code></pre>
+<p>La primera convolución proyecta canales al ancho objetivo; la RCAB hace el trabajo residual con atención. Misma firma de entrada/salida que <code>DoubleConv</code>: el resto de la U-Net no cambia.</p>
+
+<h3>Cambio 2: inicialización ICNR para PixelShuffle</h3>
+<div class="diagram">
+<svg viewBox="0 0 900 280" xmlns="http://www.w3.org/2000/svg">
+  <!-- Sin ICNR -->
+  <text x="225" y="30" text-anchor="middle" fill="#f85149" font-size="14" font-weight="bold">Init estándar → tablero de ajedrez</text>
+  <g transform="translate(100, 50)">
+    <rect width="250" height="120" fill="#1a2332" stroke="#30363d"/>
+    <!-- checkerboard -->
+    <rect x="0" y="0" width="50" height="40" fill="#4a4a4a"/>
+    <rect x="50" y="0" width="50" height="40" fill="#7a7a7a"/>
+    <rect x="100" y="0" width="50" height="40" fill="#3a3a3a"/>
+    <rect x="150" y="0" width="50" height="40" fill="#8a8a8a"/>
+    <rect x="200" y="0" width="50" height="40" fill="#5a5a5a"/>
+    <rect x="0" y="40" width="50" height="40" fill="#9a9a9a"/>
+    <rect x="50" y="40" width="50" height="40" fill="#3a3a3a"/>
+    <rect x="100" y="40" width="50" height="40" fill="#8a8a8a"/>
+    <rect x="150" y="40" width="50" height="40" fill="#4a4a4a"/>
+    <rect x="200" y="40" width="50" height="40" fill="#7a7a7a"/>
+    <rect x="0" y="80" width="50" height="40" fill="#3a3a3a"/>
+    <rect x="50" y="80" width="50" height="40" fill="#9a9a9a"/>
+    <rect x="100" y="80" width="50" height="40" fill="#4a4a4a"/>
+    <rect x="150" y="80" width="50" height="40" fill="#7a7a7a"/>
+    <rect x="200" y="80" width="50" height="40" fill="#3a3a3a"/>
+  </g>
+  <text x="225" y="200" text-anchor="middle" fill="#cfd9e6" font-size="11">r² canales adyacentes parten con pesos</text>
+  <text x="225" y="216" text-anchor="middle" fill="#cfd9e6" font-size="11">aleatorios independientes → discontinuidad</text>
+
+  <!-- Con ICNR -->
+  <text x="675" y="30" text-anchor="middle" fill="#56d364" font-size="14" font-weight="bold">ICNR → upsample suave (nearest)</text>
+  <g transform="translate(550, 50)">
+    <rect width="250" height="120" fill="#1a2332" stroke="#30363d"/>
+    <rect x="0" y="0" width="100" height="40" fill="#6a6a6a"/>
+    <rect x="100" y="0" width="100" height="40" fill="#7a7a7a"/>
+    <rect x="200" y="0" width="50" height="40" fill="#5a5a5a"/>
+    <rect x="0" y="40" width="100" height="40" fill="#6a6a6a"/>
+    <rect x="100" y="40" width="100" height="40" fill="#7a7a7a"/>
+    <rect x="200" y="40" width="50" height="40" fill="#5a5a5a"/>
+    <rect x="0" y="80" width="100" height="40" fill="#4a4a4a"/>
+    <rect x="100" y="80" width="100" height="40" fill="#8a8a8a"/>
+    <rect x="200" y="80" width="50" height="40" fill="#6a6a6a"/>
+  </g>
+  <text x="675" y="200" text-anchor="middle" fill="#cfd9e6" font-size="11">los r² canales se inicializan con pesos</text>
+  <text x="675" y="216" text-anchor="middle" fill="#cfd9e6" font-size="11">idénticos → bloques 2x2 uniformes</text>
+
+  <text x="450" y="260" text-anchor="middle" fill="#bc8cff" font-size="12" font-style="italic">ICNR = Initialized to Convolution NN Resize (Aitken et al. 2017)</text>
+</svg>
+<div class="caption">El problema del tablero en PixelShuffle: con init aleatoria los píxeles adyacentes parten descorrelacionados. ICNR replica una init pequeña para que el upsample inicial sea uniforme.</div>
+</div>
+
+<p>El problema: cuando una convolución alimenta a <code>PixelShuffle(r=2)</code>, los <code>r²=4</code> canales que se reordenan en cada bloque espacial parten de pesos aleatorios <em>independientes</em>. Como cada uno termina en una posición distinta de la rejilla 2×2 de salida, los valores adyacentes no son consistentes → patrón visible de tablero de ajedrez en las primeras épocas (y a veces persiste).</p>
+
+<p>La solución (Aitken et al.):</p>
+<pre><code>def icnr_init_(tensor, scale=2, init=nn.init.kaiming_normal_):
+    out_ch, in_ch, k1, k2 = tensor.shape
+    sub_ch = out_ch // (scale ** 2)
+    sub = torch.empty(sub_ch, in_ch, k1, k2)
+    init(sub)                                          # inicializa versión "pequeña"
+    sub = sub.repeat_interleave(scale ** 2, dim=0)     # la replica r² veces en eje de salida
+    tensor.copy_(sub)</code></pre>
+<p>Resultado: los <code>r²</code> canales que forman un mismo bloque 2×2 de salida parten con pesos idénticos → upsample inicial se comporta como vecino más cercano (sin artefactos). Desde ahí el entrenamiento los diferencia suavemente.</p>
+
+<h3>Cambio 3: persistencia del residuo bicúbico y zero-init del head</h3>
+<p>Idéntico a v2. Combinación de residuo bicúbico + ICNR + RCAB → red que arranca limpia (sin tablero, en baseline bicúbico) con atención de canal para refinar texturas.</p>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<section id="rrdb">
+<h2>4. realesrgan_arch.py — RRDBNet (Real-ESRGAN)</h2>
+
+<h3>Filosofía y propósito en el proyecto</h3>
+<p>No es un modelo entrenado aquí. Es una copia <em>self-contained</em> de la arquitectura oficial de Real-ESRGAN (Wang et al. 2021), tomada de BasicSR. La webapp necesita cargar los pesos preentrenados <code>RealESRGAN_x4plus.pth</code> que distribuye xinntao, pero la dependencia <code>basicsr</code> rompe con versiones modernas de torchvision. Reescribir la arquitectura sin esa dependencia → pesos oficiales sin conflictos.</p>
+<p>Sirve como <strong>referencia de estado del arte</strong> contra la que comparar las versiones propias.</p>
+
+<h3>Diagrama topológico</h3>
+<div class="diagram">
+<svg viewBox="0 0 1000 360" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <marker id="arrow4" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="6" markerHeight="6" orient="auto">
+      <path d="M0,0 L10,5 L0,10 z" fill="#8b98a5"/>
+    </marker>
+  </defs>
+
+  <!-- Input -->
+  <rect x="20" y="160" width="90" height="50" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="65" y="182" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">Input LR</text>
+  <text x="65" y="200" text-anchor="middle" fill="#cfd9e6" font-size="10">3 × H × W</text>
+
+  <!-- conv_first -->
+  <rect x="140" y="160" width="100" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="190" y="182" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">conv_first</text>
+  <text x="190" y="200" text-anchor="middle" fill="#cfd9e6" font-size="10">64 features</text>
+
+  <!-- Body: 23 RRDB -->
+  <rect x="270" y="120" width="280" height="130" rx="8" fill="#3d1d6b" stroke="#bc8cff" stroke-width="2"/>
+  <text x="410" y="145" text-anchor="middle" fill="#bc8cff" font-size="13" font-weight="bold">body: 23 × RRDB</text>
+  <text x="410" y="170" text-anchor="middle" fill="#e6edf3" font-size="11">cada RRDB = 3 × ResidualDenseBlock</text>
+  <text x="410" y="190" text-anchor="middle" fill="#e6edf3" font-size="11">cada RDB = 5 convs con conexiones densas</text>
+  <text x="410" y="210" text-anchor="middle" fill="#e3b341" font-size="11" font-style="italic">total: 69 bloques densos = 345 convs</text>
+  <text x="410" y="230" text-anchor="middle" fill="#e3b341" font-size="11" font-style="italic">cada residual escalado × 0.2</text>
+
+  <!-- conv_body -->
+  <rect x="580" y="160" width="100" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="630" y="190" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">conv_body</text>
+
+  <!-- Global residual sum -->
+  <circle cx="720" cy="185" r="22" fill="#238636" stroke="#56d364" stroke-width="2"/>
+  <text x="720" y="192" text-anchor="middle" fill="#fff" font-size="20" font-weight="bold">+</text>
+
+  <!-- Upsample 1 -->
+  <rect x="770" y="100" width="100" height="50" rx="6" fill="#9e6a03" stroke="#e3b341"/>
+  <text x="820" y="120" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">interpolate x2</text>
+  <text x="820" y="135" text-anchor="middle" fill="#cfd9e6" font-size="10">+ conv_up1 + LReLU</text>
+
+  <!-- Upsample 2 -->
+  <rect x="770" y="170" width="100" height="50" rx="6" fill="#9e6a03" stroke="#e3b341"/>
+  <text x="820" y="190" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">interpolate x2</text>
+  <text x="820" y="205" text-anchor="middle" fill="#cfd9e6" font-size="10">+ conv_up2 + LReLU</text>
+
+  <!-- HR convs -->
+  <rect x="770" y="240" width="100" height="50" rx="6" fill="#238636" stroke="#56d364"/>
+  <text x="820" y="262" text-anchor="middle" fill="#fff" font-size="11" font-weight="bold">conv_hr +</text>
+  <text x="820" y="278" text-anchor="middle" fill="#cfd9e6" font-size="10">conv_last</text>
+
+  <!-- Output -->
+  <rect x="890" y="240" width="100" height="50" rx="6" fill="#1f6feb" stroke="#58a6ff"/>
+  <text x="940" y="262" text-anchor="middle" fill="#fff" font-size="12" font-weight="bold">Output HR</text>
+  <text x="940" y="278" text-anchor="middle" fill="#cfd9e6" font-size="10">3 × 4H × 4W</text>
+
+  <!-- Arrows -->
+  <line x1="110" y1="185" x2="140" y2="185" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="240" y1="185" x2="270" y2="185" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="550" y1="185" x2="580" y2="185" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="680" y1="185" x2="700" y2="185" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="742" y1="185" x2="770" y2="125" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="820" y1="150" x2="820" y2="170" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="820" y1="220" x2="820" y2="240" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+  <line x1="870" y1="265" x2="890" y2="265" stroke="#8b98a5" stroke-width="2" marker-end="url(#arrow4)"/>
+
+  <!-- Global skip -->
+  <path d="M 240 210 Q 240 310 720 310 L 720 207" stroke="#e3b341" stroke-width="2" stroke-dasharray="6,4" fill="none" marker-end="url(#arrow4)"/>
+  <text x="450" y="330" text-anchor="middle" fill="#e3b341" font-size="11" font-style="italic">skip global del cuerpo (feat + body_feat)</text>
+
+  <text x="500" y="50" text-anchor="middle" fill="#f78166" font-size="15" font-weight="bold">RRDBNet — cadena lineal de bloques residuales (no U-Net)</text>
+</svg>
+<div class="caption">RRDBNet: el cuerpo trabaja a resolución LR a lo largo de 23 bloques RRDB. El upsample x4 se hace al final en dos etapas x2 con interpolación nearest + conv.</div>
+</div>
+
+<h3>Diferencias topológicas radicales con las U-Net anteriores</h3>
+<ul>
+  <li><strong>No es una U-Net</strong>: sin encoder-decoder, sin skips multi-escala. Cadena lineal de bloques residuales que trabajan siempre a la resolución de entrada (baja). Upsample solo al final.</li>
+  <li><strong>Sin BatchNorm, sin Sigmoid, sin atención de canal</strong>.</li>
+  <li>Usa <strong>LeakyReLU con pendiente negativa 0.2</strong> en lugar de ReLU.</li>
+  <li>Inicialización Kaiming con escalado por 0.1 (<code>_default_init</code>), copiada literalmente de <code>default_init_weights</code> de BasicSR.</li>
+</ul>
+
+<h3>Bloques</h3>
+
+<h4>ResidualDenseBlock(num_feat=64, num_grow_ch=32) — bloque denso con residual escalado</h4>
+<pre><code>x1 = LeakyReLU(conv1(x))
+x2 = LeakyReLU(conv2(cat(x, x1)))
+x3 = LeakyReLU(conv3(cat(x, x1, x2)))
+x4 = LeakyReLU(conv4(cat(x, x1, x2, x3)))
+x5 = conv5(cat(x, x1, x2, x3, x4))
+return x5 * 0.2 + x</code></pre>
+<p>Cinco convoluciones donde cada una recibe la concatenación de la entrada original y todas las salidas intermedias previas (conexiones densas estilo DenseNet). Crecimiento de canales por capa: <code>num_grow_ch=32</code>. Última convolución comprime a <code>num_feat=64</code>. Factor <code>0.2</code> antes del residual: mantiene varianza estable y permite apilar muchos bloques sin que activaciones exploten.</p>
+
+<h4>RRDB(num_feat) — Residual in Residual Dense Block</h4>
+<pre><code>out = rdb1(x)
+out = rdb2(out)
+out = rdb3(out)
+return out * 0.2 + x</code></pre>
+<p>Tres <code>ResidualDenseBlock</code> en serie, con otro residual escalado por 0.2. De ahí el nombre: <em>Residual-in-Residual Dense Block</em>.</p>
+
+<h4>RRDBNet — red completa, configuración oficial x4plus</h4>
+<ul>
+  <li><code>num_in_ch=3, num_out_ch=3, scale=4, num_feat=64, num_block=23, num_grow_ch=32</code></li>
+  <li>23 bloques RRDB apilados = 23 × 3 = 69 bloques densos = 345 convoluciones solo en el cuerpo.</li>
+</ul>
+<p>Forward simplificado:</p>
+<pre><code>feat = conv_first(x)
+body_feat = conv_body(secuencia_de_23_RRDB(feat))
+feat = feat + body_feat                                      # residual global sobre el cuerpo
+
+feat = LeakyReLU(conv_up1(interpolate(feat, x2, nearest)))
+feat = LeakyReLU(conv_up2(interpolate(feat, x2, nearest)))   # si scale=4
+out  = conv_last(LeakyReLU(conv_hr(feat)))
+return out</code></pre>
+<p>El upsample x4 se hace en dos etapas x2 con interpolación por vecino más cercano seguidas de una convolución (la convolución corrige los artefactos de la interpolación). <strong>No usa PixelShuffle</strong>.</p>
+
+<h3>Por qué no se entrena aquí</h3>
+<div class="callout warn">
+<ul>
+  <li>Tamaño: ~17M parámetros. Fuera del presupuesto autoimpuesto de 2-10M.</li>
+  <li>Requiere esquema de entrenamiento mucho más complejo: pérdida adversarial (GAN), pérdida perceptual sobre VGG, degradaciones sintéticas de segundo orden, cientos de horas de GPU.</li>
+  <li>Aquí solo se carga el <code>state_dict</code> preentrenado en la webapp → comparar visualmente la salida de las versiones propias contra el estado del arte.</li>
+</ul>
+</div>
+</section>
+
+<!-- ═══════════════════════════════════════════════════════════════════════ -->
+<section id="resumen">
+<h2>5. Resumen comparativo</h2>
+
+<table>
+  <thead>
+    <tr>
+      <th>Aspecto</th>
+      <th>versión 1</th>
+      <th>versión 2</th>
+      <th>versión 3</th>
+      <th>RRDBNet</th>
+    </tr>
+  </thead>
+  <tbody>
+    <tr><td><strong>Topología</strong></td><td>U-Net</td><td>U-Net</td><td>U-Net</td><td>Cadena lineal de RRDB</td></tr>
+    <tr><td><strong>Bloque básico</strong></td><td>DoubleConv con BatchNorm</td><td>DoubleConv sin BatchNorm</td><td>RCAStage (proyección + RCAB)</td><td>ResidualDenseBlock</td></tr>
+    <tr><td><strong>Normalización</strong></td><td>BatchNorm2D</td><td>Ninguna</td><td>Ninguna</td><td>Ninguna</td></tr>
+    <tr><td><strong>Activación interna</strong></td><td>ReLU</td><td>ReLU</td><td>ReLU</td><td>LeakyReLU(0.2)</td></tr>
+    <tr><td><strong>Activación final</strong></td><td>Sigmoid</td><td>Clamp [0,1]</td><td>Clamp [0,1]</td><td>Ninguna</td></tr>
+    <tr><td><strong>Residual global</strong></td><td>No</td><td>Sobre bicúbico</td><td>Sobre bicúbico</td><td>Solo sobre el cuerpo</td></tr>
+    <tr><td><strong>Atención de canal</strong></td><td>No</td><td>No</td><td>Sí (Squeeze-Excitation)</td><td>No</td></tr>
+    <tr><td><strong>Upsampling</strong></td><td>PixelShuffle (init estándar)</td><td>PixelShuffle (init estándar)</td><td>PixelShuffle con ICNR</td><td>Interpolación nearest + conv</td></tr>
+    <tr><td><strong>Inicialización head</strong></td><td>Default</td><td>Zero-init</td><td>Zero-init</td><td>Kaiming × 0.1</td></tr>
+    <tr><td><strong>Origen</strong></td><td>Propio</td><td>Iteración propia sobre v1</td><td>Iteración propia sobre v2, inspirada en RCAN</td><td>Externo (Real-ESRGAN oficial)</td></tr>
+  </tbody>
+</table>
+
+<div class="callout">
+La progresión versión 1 → 2 → 3 muestra una iteración disciplinada donde cada cambio está aislado y justificado por la literatura. <code>RRDBNet</code> actúa como referencia externa para situar los resultados propios frente al estado del arte.
+</div>
+
+<div class="legend">
+  <div class="legend-item"><div class="legend-box" style="background:#1f6feb"></div>Input/Output</div>
+  <div class="legend-item"><div class="legend-box" style="background:#238636"></div>Convolución / suma</div>
+  <div class="legend-item"><div class="legend-box" style="background:#db6d28"></div>Decoder</div>
+  <div class="legend-item"><div class="legend-box" style="background:#9e6a03"></div>Upsample</div>
+  <div class="legend-item"><div class="legend-box" style="background:#bc8cff"></div>Bloque especial (bottleneck / atención)</div>
+  <div class="legend-item"><div class="legend-box" style="background:#a40e26"></div>Head</div>
+  <div class="legend-item"><div class="legend-box" style="background:#e3b341"></div>Skip connection</div>
+</div>
+
+</section>
+
+</div>
+</body>
+</html>
